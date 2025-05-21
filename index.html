@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>TensorFlow.js modelo cuadratico</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tailwindcss@3.0.24/dist/tailwind.min.js"></script>
+</head>
+<body class="flex flex-col justify-center items-center h-screen bg-gray-100">
+
+  <h1 class="text-3xl font-semibold mb-4">TensorFlow.js modelo cuadratico</h1>
+  <p class="mb-4">Formula: y = 2x² - 3x + 1</p>
+
+  <button class="px-4 py-2 bg-blue-500 text-white rounded mb-2" onclick="entrenarModelo()">Entrenar Modelo</button>
+
+  <label for="inputX" class="mb-2">Ingresa los valores de X separados por coma</label>
+  <input type="text" id="inputX" value="0, 1, 2" class="px-4 py-2 border rounded mb-4" />
+  
+  <button class="px-4 py-2 bg-green-500 text-white rounded" onclick="predecir()">Predecir</button>
+
+  <p id="resultado" class="mt-4 text-lg"></p>
+  <div id="graficoPerdida" class="w-full mt-4" style="height: 400px;"></div>
+  <p id="perdidaResumen" class="mt-4 text-lg font-semibold"></p>
+
+  <script>
+    let modelo
+    let perdidasAnteriores = []
+    let cantidadEntrenamientos = 0
+
+    async function entrenarModelo() {
+      document.getElementById('resultado').innerText = "Entrenando modelo..."
+
+      // Crear modelo para función cuadrática
+      modelo = tf.sequential()
+      modelo.add(tf.layers.dense({ units: 10, inputShape: [1], activation: 'relu' }))
+      modelo.add(tf.layers.dense({ units: 10, activation: 'relu' }))
+      modelo.add(tf.layers.dense({ units: 1 }))
+      modelo.compile({ loss: 'meanSquaredError', optimizer: tf.train.adam(0.01) })
+
+      // Datos de entrenamiento para y = 2x² - 3x + 1
+      const xTrain = tf.tensor1d([-3, -2, -1, 0, 1, 2, 3, 4, 5])
+      const yTrain = tf.tensor1d(
+        xTrain.arraySync().map(x => 2 * x * x - 3 * x + 1)
+      )
+
+      let historialActual = []
+      let perdidaInicial = null
+      let perdidaFinal = null
+
+      await modelo.fit(xTrain, yTrain, {
+        epochs: 350,
+        callbacks: {
+          onEpochEnd: (epoch, logs) => {
+            historialActual.push({ epoch, loss: logs.loss })
+            if (epoch === 0) perdidaInicial = logs.loss
+            if (epoch === 349) perdidaFinal = logs.loss
+          }
+        }
+      })
+
+      cantidadEntrenamientos++
+
+      const datosFiltrados = historialActual.filter((_, index) => index % 10 === 0)
+
+      perdidasAnteriores.push({
+        x: datosFiltrados.map(p => p.epoch),
+        y: datosFiltrados.map(p => p.loss),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'entreno ' + cantidadEntrenamientos
+      })
+
+      mostrarGraficoPerdida()
+
+      const reduccion = ((perdidaInicial - perdidaFinal) / perdidaInicial) * 100
+      document.getElementById('resultado').innerText = "Modelo entrenado y listo para usar"
+      document.getElementById('perdidaResumen').innerText = 
+        `Pérdida inicial: ${perdidaInicial.toFixed(4)}, Pérdida final: ${perdidaFinal.toFixed(4)}, Reducción: ${reduccion.toFixed(2)}%`
+    }
+
+    async function predecir() {
+      if (!modelo) {
+        document.getElementById('resultado').innerText = "Primero entrena el modelo"
+        return
+      }
+
+      const inputX = document.getElementById('inputX').value
+      const valoresX = inputX.split(',').map(val => parseFloat(val.trim())).filter(val => !isNaN(val))
+      if (valoresX.length === 0) {
+        document.getElementById('resultado').innerText = "Ingresa valores válidos para X"
+        return
+      }
+
+      const tensorX = tf.tensor2d(valoresX, [valoresX.length, 1])
+      const resultado = modelo.predict(tensorX)
+      const y = await resultado.data()
+
+      let textoResultado = "Resultados de predicción:"
+      for (let i = 0; i < valoresX.length; i++) {
+        textoResultado += `\nPara x = ${valoresX[i]}, y = ${y[i].toFixed(4)}`
+      }
+
+      document.getElementById('resultado').innerText = textoResultado
+    }
+
+    function mostrarGraficoPerdida() {
+      const layout = {
+        title: 'Gráfica de pérdida durante el entrenamiento',
+        xaxis: { title: 'Época', dtick: 10 },
+        yaxis: { title: 'Valor de la pérdida' }
+      }
+
+      Plotly.newPlot('graficoPerdida', perdidasAnteriores, layout)
+    }
+  </script>
+  
+</body>
+</html>
